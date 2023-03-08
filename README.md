@@ -1,7 +1,8 @@
 # Taller práctico en Microbiomas Vegetales usando R
 
 **7 al 9 de Agosto, 2023**  
-**Presencial Campus Cumbaya - Universidad San Francisco de Quito**
+**09h00 a 18h00**  
+**Presencial Campus Cumbaya - Universidad San Francisco de Quito USFQ**
 
 ### Requisitos
 El taller es 100% practico por lo que los participantes deben contar con una laptop con mínimo 8Gb de RAM (16Gb preferible)  
@@ -17,7 +18,6 @@ Conocimientos básicos de R y RStudio
 
 ### Expositor
 Dario X. Ramirez-Villacis  
-Universidad San Francisco de Quito  
 https://orcid.org/0000-0002-2739-2636
 
 ### Costo
@@ -32,5 +32,5 @@ Noelia Barriga
 [labbioagricola@usfq.edu.ec](mailto:labbioagricola@usfq.edu.ec)  
 098 793 3749
 
-
+![Microbiomas Vegetales 2023-04](https://user-images.githubusercontent.com/65320918/223777780-a1c4272c-331a-4471-a89a-f3e4149a1772.jpg)
 
