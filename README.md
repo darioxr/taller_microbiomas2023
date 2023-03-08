@@ -17,7 +17,9 @@ Conocimientos básicos de R y RStudio
 * Análisis de abundancia diferencial
 
 ### Expositor
-Dario X. Ramirez-Villacis  
+Dario X. Ramirez-Villacis Ph.D.(c)
+Plant-Microbe Interactions Group, Utrecht University
+Microbial Ecology Department, Netherlands Institute of Ecology NIOO-KNAW
 https://orcid.org/0000-0002-2739-2636
 
 ### Costo
