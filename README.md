@@ -5,7 +5,7 @@
 **Presencial Campus Cumbaya - Universidad San Francisco de Quito USFQ**
 
 ### Requisitos
-El taller es 100% practico por lo que los participantes deben contar con una laptop con mínimo 8Gb de RAM (16Gb preferible)  
+El taller es 100% práctico por lo que los participantes deben contar con una laptop con mínimo 8Gb de RAM (16Gb preferible)  
 Conocimientos básicos de R y RStudio
 
 ### Temas
