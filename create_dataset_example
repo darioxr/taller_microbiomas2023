@@ -1,0 +1,193 @@
+library(AMOR)
+library(magritter)
+
+setwd()
+
+decimal_format <- function(x) trimws(format(round(x, 2), nsmall=2))
+
+#Read table
+
+Tab <- read.table(file = "",
+                  header = T,sep = "\t",row.names = 1,comment.char = "",quote = "")
+
+
+rownames(Tab)
+
+#Read metadata
+Map <- read.table(file = "",
+                  header = T,sep = "\t",comment.char = "",quote = "", stringsAsFactors = T)
+colnames(Map)[1] <- "DADA2_Header" #column with ID
+
+
+rownames(Map) <- Map$DADA2_Header
+
+'%!in%' <- function(x,y)!('%in%'(x,y))
+
+rownames(Map)[which(rownames(Map) %!in% rownames(Tab))]
+
+rownames(Tab)[which(rownames(Tab) %!in% rownames(Map))]
+
+Tab <- match(Map$DADA2_Header,rownames(Tab)) %>% Tab[.,]
+
+Tab <- Tab %>% t
+
+Total_reads <- sum(Tab)
+Total_ASV <- nrow(Tab)
+
+cat(paste0("Total reads:", "\t", Total_reads, "\n", 
+           "Total ASVs:", "\t", Total_ASV))
+
+log <- paste0(" Total reads:", "\t", Total_reads, "\n", 
+              " Total ASVs:", "\t", Total_ASV, "\n", "\n")
+
+
+#Handle the taxtonomic object derived from dada2
+Tax<-read.table(file = "seqsformothur.full_v132.wang.taxonomy",
+                header = F,sep = "\t",quote = "",comment.char = "")
+
+colnames(Tax) <- c("ID","Taxonomy")
+rownames(Tax) <- Tax$ID
+Tax$Taxonomy <- Tax$Taxonomy %>% as.character %>% 
+  gsub(pattern = "\\([0-9]+\\)",replacement = "",perl = T)
+ntax <- NULL
+for(i in 1:nrow(Tax)){
+  ttax <- as.character(Tax[i,2])
+  noms <- unlist(strsplit(x = ttax,split = ";"))
+  fnom <- paste0("Root; k__",noms[1],"; p__",noms[2],"; c__",noms[3],"; o__",noms[4],"; f__",noms[5],"; g__",noms[6])
+  ntax <- c(ntax,fnom)
+}
+Tax$Taxonomy <- factor(ntax)
+
+Tax <- Tax[match(rownames(Tab),Tax$ID),]
+
+Dat <- create_dataset(Tab = Tab  ,Map = Map,Tax = Tax)
+
+#Create taxonomy data.frame
+mdf <- Dat$Tax
+df_tax <- mdf$Taxonomy %>% as.character %>%
+  strsplit(split  = "\\;") %>%
+  unlist %>%  gsub(pattern = "[a-z]__",replacement = "",) %>%
+  gsub(pattern = " ",replacement = "") %>%
+  matrix(data = .,ncol = 7,byrow = T) %>% as.data.frame
+colnames(df_tax) <-c("Root","Kingdom","Phylum",
+                     "Class","Order","Family","Genus")
+df_tax <- cbind(mdf$ID,df_tax)
+colnames(df_tax)[1] <- "Id"
+
+df_tax$Root <- factor(df_tax$Root)
+df_tax$Kingdom <- factor(df_tax$Kingdom)
+df_tax$Phylum <- factor(df_tax$Phylum)
+df_tax$Class <- factor(df_tax$Class)
+df_tax$Order <- factor(df_tax$Order)
+df_tax$Family <- factor(df_tax$Family)
+df_tax$Genus <- factor(df_tax$Genus)
+
+#Identify contaminants
+
+levels(df_tax$Kingdom)
+levels(df_tax$Phylum)
+levels(df_tax$Class)
+
+contam_otus <- c(grep(pattern = "chloroplast", as.character(Dat$Tax$Taxonomy),ignore.case = TRUE),
+                 grep(pattern = "mitochondri", as.character(Dat$Tax$Taxonomy),ignore.case = TRUE),
+                 grep(pattern = "oomycete", as.character(Dat$Tax$Taxonomy),ignore.case = TRUE),
+                 grep(pattern = "unknown", as.character(Dat$Tax$Taxonomy),ignore.case = TRUE),
+                 grep(pattern = "p__Bacteria_unclassified", as.character(Dat$Tax$Taxonomy),ignore.case = TRUE),
+                 grep(pattern = "k__Eukaryota", as.character(Dat$Tax$Taxonomy),ignore.case = TRUE),
+                 grep(pattern = "k__Viridiplantae", as.character(Dat$Tax$Taxonomy),ignore.case = TRUE),
+                 grep(pattern = "k__Archaea", as.character(Dat$Tax$Taxonomy),ignore.case = TRUE)
+)
+contam_otus <- row.names(Dat$Tax)[contam_otus]
+contam_otus_identity <- Dat$Tax[ contam_otus, ]
+
+# Filter Dataset
+Dat_filter <- remove_taxons(Dat = Dat, taxons = contam_otus)
+Dat_filter <- clean(Dat = Dat_filter,verbose = TRUE)
+
+contaminant_reads <- Total_reads - sum(Dat_filter$Tab)
+contaminant_reads_percent <- contaminant_reads/Total_reads * 100
+contaminant_ASV <- Total_ASV - nrow(Dat_filter$Tab)
+contaminant_ASV_percent <- contaminant_ASV/Total_ASV * 100
+
+cat(paste0("Contaminant reads:", "\t", contaminant_reads, "\t", decimal_format(contaminant_reads_percent), "%", "\n", 
+           "Contaminant ASV:", "\t", contaminant_ASV, "\t", decimal_format(contaminant_ASV_percent), "%"))
+
+log <- c(log, paste0("Contaminant reads:", "\t", contaminant_reads, "\t", decimal_format(contaminant_reads_percent), "%", "\n", 
+              " Contaminant ASV:", "\t", contaminant_ASV, "\t", decimal_format(contaminant_ASV_percent), "%"), "\n", "\n")
+
+Dat <- Dat_filter
+
+#Compute depth
+Dat$Map$Depth <- colSums(Dat$Tab)
+Dat$Map$LDepth <- log(Dat$Map$Depth)
+
+#Remove samples with less than reads_limit
+
+sort(Dat$Map$Depth)
+
+reads_limit <- 10000 
+
+ndf <- Dat$Map[order(Dat$Map$LDepth),]
+ndf$DADA2_Header <- ndf$DADA2_Header %>% factor(levels = rownames(ndf))
+plot(y = ndf$Depth, x = ndf$DADA2_Header, las = 2, cex.axis=0.75)
+abline(h = reads_limit, col = "red")
+tiff(file="read_distribution.tiff", width=16, height=6, units="in", res=100)
+plot(y = ndf$Depth, x = ndf$DADA2_Header, las = 2, cex.axis=0.75)
+abline(h = reads_limit, col = "red")
+dev.off()
+out <- ndf[which(ndf$Depth < reads_limit),]
+out
+capture.output(out, file = "samples_out.txt")
+
+Dat_raw <- remove_samples(Dat,row.names(Dat$Map)[ Dat$Map$Depth < reads_limit ])
+Dat_raw <- clean(Dat_raw)
+
+raw_reads <- sum(Dat_raw$Tab)
+raw_ASV <- nrow(Dat_raw$Tab)
+
+cat(paste0("# Read limit:", "\t", reads_limit, "\n",
+           "Total samples:", "\t", ncol(Dat$Tab), "\n",
+           "Usable samples:", "\t", ncol(Dat_raw$Tab), "\t", decimal_format(ncol(Dat_raw$Tab)/ncol(Dat$Tab)*100),"%", "\n", "\n",
+           "Usable reads", "\n",
+           "Raw reads:", "\t", raw_reads, "\t", "100%", "\n", 
+           "Raw ASV:", "\t", raw_ASV, "\t", "100%"))
+
+log <- c(log, paste0("# Read limit:", "\t", reads_limit, "\n",
+                     " Total samples:", "\t", ncol(Dat$Tab), "\n",
+                     " Usable samples:", "\t", ncol(Dat_raw$Tab), "\t", decimal_format(ncol(Dat_raw$Tab)/ncol(Dat$Tab)*100),"%", "\n", "\n",
+                     " Usable reads", "\n",
+                     " Raw reads:", "\t", raw_reads, "\t", "100%", "\n", 
+                     " Raw ASV:", "\t", raw_ASV, "\t", "100%", "\n", "\n"))
+
+### Rarefaction
+set.seed(3111)
+Dat_rar <- rarefaction(x = Dat_raw,sample =reads_limit)
+Dat_rar <- clean(Dat_rar)
+
+rar_reads <- sum(Dat_rar$Tab)
+rar_reads_percent <- rar_reads/raw_reads * 100
+rar_ASV <- nrow(Dat_rar$Tab)
+rar_ASV_percent <- rar_ASV/raw_ASV *100  
+
+cat(paste0("Rarefied reads:", "\t", rar_reads, "\t", decimal_format(rar_reads_percent), "%", "\n", 
+           "Rarefied ASV:", "\t", rar_ASV, "\t", decimal_format(rar_ASV_percent), "%"))
+
+log <- c(log, paste0("Rarefied reads:", "\t", rar_reads, "\t", decimal_format(rar_reads_percent), "%", "\n", 
+                     " Rarefied ASV:", "\t", rar_ASV, "\t", decimal_format(rar_ASV_percent), "%", "\n", "\n"))
+
+
+###Relative abundance 
+Dat_rab <- remove_samples(Dat,row.names(Dat$Map)[ Dat$Map$Depth < reads_limit ])
+Dat_rab <- clean(Dat_rab)
+Dat_rab$Tab <- scale(x = Dat_rab$Tab,center = F,scale = colSums(Dat_rab$Tab))
+
+capture.output(cat(log), file = "log_data_set_create_drought_maize.txt")
+
+##Save the raw , rarefied and relative abundance datasets into a global structure
+Dat_amplicon<-list(RawCounts=Dat_raw,
+                   Rarefied=Dat_rar,
+                   RelativeAbundance=Dat_rab,
+                   df_tax = df_tax)
+filename <- "dat_soil_drought_maize.RDS"
+saveRDS(object = Dat_amplicon,file = filename)
+rm(list=ls())
