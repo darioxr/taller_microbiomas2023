@@ -1,0 +1,234 @@
+library(ohchibi)
+library(tidyverse)
+library(ggpubr)
+
+setwd('')
+
+size_legend_text <- 45
+size_axis_title <- 35
+size_legend_title <- 45
+legend_proportion_size <- 4
+
+samples_out <- c("ROFSo4", "RONEn1", "RONEn2", "RONEn3", "RONEn4")
+
+Dat_ori <- readRDS("dat_roses_bacteria.RDS")
+Dat_ori$RawCounts <- remove_samples(Dat = Dat_ori$RawCounts, samples = samples_out)
+Dat_ori$Rarefied <- remove_samples(Dat = Dat_ori$Rarefied, samples = samples_out)
+Dat_ori$RelativeAbundance <- remove_samples(Dat = Dat_ori$RelativeAbundance, samples = samples_out)
+
+##### Calculate alfa indexes
+
+Dat_rar <- Dat_ori$Rarefied
+dat_alfa <- Dat_rar 
+
+dat_alfa$Map$Richness <- colSums(dat_alfa$Tab > 0) #equal to vegan::specnumber
+temp <- vegan::estimateR(t(dat_alfa$Tab)) %>% t()
+dat_alfa$Map$Chao1 <- temp[,2]
+dat_alfa$Map$Shannon <- vegan::diversity(x = dat_alfa$Tab, index = "shannon", MARGIN = 2)
+#dat_alfa$Map$Simpson <- vegan::diversity(x = dat_alfa$Tab, index = "simpson", MARGIN = 2)
+dat_alfa$Map$invSimpson <- vegan::diversity(x = dat_alfa$Tab, index = "invsimpson", MARGIN = 2)
+dat_alfa$Map$Evenness <- dat_alfa$Map$Shannon/log(dat_alfa$Map$Richness) # H/log(specnumber)
+rm(temp)
+
+dat_alfa$Map$Fraction <- dat_alfa$Map$Fraction %>% factor(levels = c("Soil", "Rhizosphere"))
+dat_alfa$Map$Variety <- dat_alfa$Map$Variety %>% factor(levels = c("Natal_Briar", "Explorer", "Freedom"))
+
+p1 <- chibi.boxplot(Map = dat_alfa$Map,x_val = "Fraction",
+                    y_val = "Shannon",col_val = "Fraction",
+                    size_median = 5,style = "open",
+                    size_point = 0,alpha_point = 0.4,stroke_point = 0, jitter_width = 0.4, 
+                    dodge_width = 1,
+                    median_colored_as_points = T, mpalette = c("#c59434","#0f2080"),
+                    size_axis_text.y = 20,
+                    size_axis_title.x = 30,
+                    size_axis_title.y = 30,
+                    size_legend_text = 20,
+                    strip_text_size = 20,
+                    size_title_text = 30,
+                    legend_proportion_size = legend_proportion_size,font_family = "Arial") +
+  ylab(label = "Shannon diversity index") + theme(legend.position = "none", axis.title.x = element_blank())
+p1
+
+ggsave(plot = p1, filename = "XXX.pdf", device = "pdf", scale = 3)
+
+######
+alfa <- subset(Dat_sub$Map, select=-c(DADA2_Header, Depth, LDepth))
+
+alfa_long <- pivot_longer(data = alfa, cols = c("Richness","Chao1","Shannon","invSimpson","Evenness"), 
+                          names_to = "Index", 
+                          values_to = "y", 
+                          values_drop_na = TRUE)
+
+
+
+alfa_long_sub <- alfa_long
+#alfa_long_sub <- subset(alfa_long, subset = )
+
+p <- ggboxplot(alfa_long_sub, x = "", y = "y", fill = "",
+               facet.by = c("Index"), scales="free") %>% 
+  ggpar(.,xtickslab.rt = -45, ggtheme = theme_ohchibi(legend_proportion_size = 2)) + 
+  theme(legend.position = "bottom", legend.box = "horizontal", legend.title = element_text(face="bold", size = 20), 
+        axis.title.x = element_blank()) +
+  guides(fill = guide_legend(nrow = 1)) 
+
+p
+
+# https://rpkgs.datanovia.com/ggpubr/
+# https://www.datanovia.com/en/blog/how-to-add-p-values-to-ggplot-facets/
+
+
+##### Beta diversity
+
+#Define Bray Curtis as the dissimilarity
+distfun <- function(x,method) vegan::vegdist(x = x, method = "bray")
+
+#PCoA Fraction
+Dat_rar <- Dat_ori$Rarefied
+dat_sub <- Dat_rar 
+#dat_sub <- Dat_rar %>% subset.Dataset(subset = Fraction == "Rhizosphere", drop = T, clean = T)
+mpco <- oh.pco(Tab = t(dat_sub$Tab),Map = dat_sub$Map,ndim = 3,eig = T,
+               distfun = distfun,id_var = "DADA2_Header")
+
+p1 <- chibi.pco(list_ohpco = mpco,col_val = "Fraction", shape_val = "Fraction", 
+                mypch = 21,size = 20,alpha=1,
+                size_legend_text = size_legend_text,size_axis_title = size_axis_title,size_axis_line = 2,
+                size_title_text = size_legend_title, 
+                font_family = "Arial",legend_proportion_size = 4,lines_zero = T) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
+  scale_fill_manual(values = c("#c5ad34","#693515")) + 
+  scale_color_manual(values = c("#c5ad34","#693515"))
+
+p1
+oh.save.pdf(p = p1,outname = "pcoa_fraction_legend.pdf",outdir = "figures_final/")
+
+#Permanova
+Tab_bray <- distfun(t(dat_sub$Tab))
+mypermanova <- adonis(Tab_bray ~ Fraction,
+                      data = dat_sub$Map, permutations = 10000)
+mypermanova
+capture.output(file = "permanova.txt", mypermanova)
+
+
+#PCoA rhizosphere only, Graft
+Dat_rar <- Dat_ori$Rarefied
+dat_sub <- Dat_rar %>% subset.Dataset(subset = Fraction == "Rhizosphere", drop = T, clean = T)
+dat_sub$Map$Graft <- c(rep("Grafted", 8), rep("Non_grafted", 4))
+mpco <- oh.pco(Tab = t(dat_sub$Tab),Map = dat_sub$Map,ndim = 3,eig = T,
+               distfun = distfun,id_var = "DADA2_Header")
+
+p1 <- chibi.pco(list_ohpco = mpco,col_val = "Graft", 
+                mypch = 21,size = 20,alpha=1,
+                size_legend_text = size_legend_text,size_axis_title = size_axis_title,size_axis_line = 2,
+                size_title_text = size_legend_title, 
+                font_family = "Arial",legend_proportion_size = 4,lines_zero = T) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
+  scale_fill_manual(values = c("#EB4407", "#00B505")) + 
+  scale_color_manual(values = c("#EB4407","#00B505"))
+
+p1
+oh.save.pdf(p = p1,outname = "pcoa_graft_only_rhizo_legend.pdf",outdir = "figures_final/")
+
+
+###Permanova
+
+
+##### Explorer versus Freedom only rhizo
+
+#Define Bray Curtis as the dissimilarity
+distfun <- function(x,method) vegan::vegdist(x = x, method = "bray")
+
+#PCoA rhizosphere only, variety
+Dat_rar <- Dat_ori$Rarefied
+dat_sub <- Dat_rar %>% subset.Dataset(subset = Fraction == "Rhizosphere" & Variety != "Natal_Briar", drop = T, clean = T)
+mpco <- oh.pco(Tab = t(dat_sub$Tab),Map = dat_sub$Map,ndim = 3,eig = T,
+               distfun = distfun,id_var = "DADA2_Header")
+
+p1 <- chibi.pco(list_ohpco = mpco,col_val = "Variety", 
+                mypch = 21,size = 20,alpha=1,
+                size_legend_text = size_legend_text,size_axis_title = size_axis_title,size_axis_line = 2,
+                size_title_text = size_legend_title, 
+                font_family = "Arial",legend_proportion_size = 4,lines_zero = T) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
+  scale_fill_manual(values = c("#288FEB","#50109E")) + 
+  scale_color_manual(values = c("#288FEB","#50109E"))
+
+p1
+oh.save.pdf(p = p1,outname = "pcoa_explorer_freedom_only_rhizo_legend.pdf",outdir = "figures_final/")
+
+## Permanova
+
+
+
+
+#Collapse taxonomy
+
+dat_sub <- Dat_rar
+
+#Collapse taxonomy
+# Phylum 3 "p__" # Class 4 "c__" # Order 5 "o__" # Family 6 "f__" # Genus 7 "g__"
+
+tax_level <- 6
+id_nivel <- "f__"
+
+Dat_tax <- dat_sub %>% collapse_by_taxonomy.Dataset(Dat = .,level = tax_level)
+
+nrow(Dat_tax$Tab)
+
+chosen_number_taxa <- 18 #maximun 18
+
+tab_sums <- Dat_tax$Tab %>% rowSums() %>% as.table(header = T, row.names = F) %>% sort(decreasing = T)
+
+rownames(tab_sums) <- tab_sums %>% rownames %>%
+  strsplit(split = "\\;") %>% unlist %>%
+  grep(pattern = id_nivel,value = T) %>% 
+  gsub(pattern = id_nivel,replacement = "") %>%
+  gsub(pattern = " ",replacement = "")
+
+paleta <- c("#F44336", "#3F51B5", "#C2185B", "#4CAF50", "#607D8B", 
+            "#FBC02D", "#9302E1", "#009688", "#463575", "#FF9800", 
+            "#03A9F4", "#CDDC39", "#FF7500", "#00BCD4", "#8BC34A", 
+            "#FFA000", "#795548", "#03A9F4", "#9E9E9E", "#FFCDD2", "#000000")
+
+nother <- chosen_number_taxa+1
+
+names(paleta) <- rownames(tab_sums[1:chosen_number_taxa]) %>% sort()
+names(paleta)[nother] <- "Other"
+paleta[nother] = "#000000"
+
+#Split Tab and Map to create another structure
+Tab  <- Dat_tax$Tab
+Map <- Dat_tax$Map
+
+rownames(Tab) <- Tab %>% rownames %>%
+  strsplit(split = "\\;") %>% unlist %>%
+  grep(pattern = id_nivel,value = T) %>% 
+  gsub(pattern = id_nivel,replacement = "") %>%
+  gsub(pattern = " ",replacement = "")
+
+mytax <- names(paleta)
+paleta <- paleta[-which(is.na(mytax))]
+mytax <- mytax[-which(is.na(mytax))]
+
+if(nrow(Dat_tax$Tab) > chosen_number_taxa){
+  Tab_pr <- Tab[which((rownames(Tab) %in% mytax)),] 
+  Tab_pr <- Tab_pr[order(rownames(Tab_pr)),]
+  
+  Other <- Tab[which(!(rownames(Tab) %in% mytax)),] %>%
+    colSums
+  Tab <- rbind(Tab_pr,Other)
+} else {
+  Tab_pr <- Tab[which((rownames(Tab) %in% mytax)),] 
+  Tab_pr <- Tab_pr[order(rownames(Tab_pr)),]
+  Tab <- Tab_pr
+}
+
+#Create new phyla dataset
+Dat_phyla <- create_dataset(Tab = Tab,Map = Map)
+
+res <- chibi.phylogram(Tab = Dat_phyla$Tab,Map = Dat_phyla$Map,facet_formula = "",
+                       colname = "sample",
+                       size_ticks_x = 0,size_strip_text = 10,size_axis_text = 20,
+                       legend_proportion_size = 2,size_legend_text = 25,
+                       size_axis_title = 0,font_family = "Arial",size_title_text = 35)
+p <- res$p_mean + scale_fill_manual(values = paleta) #+ theme(legend.position = "none")
+p 
